@@ -3,57 +3,82 @@
 #include <openssl/obj_mac.h>
 
 schnorr_key* schnorr_key_new() {
-    schnorr_key* dest = malloc(sizeof(schnorr_key));
+    schnorr_key* dest = NULL;
+    schnorr_pubkey* pub = NULL;
+    EC_GROUP* group = NULL;
+    BN_CTX* ctx = NULL;
+    int error = 1;
+
+    dest = malloc(sizeof(schnorr_key));
     if(dest == NULL) {
-        return NULL;
+        goto cleanup;
     }
+    dest->a = NULL;
     
     dest->a = BN_new();
     if(dest->a == NULL) {
-        return NULL;
+        goto cleanup;
     }
 
     if(BN_rand(dest->a, 256, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY) != 1) {
-        return NULL;
+        goto cleanup;
     }
 
     if(BN_is_zero(dest->a)) {
-        return NULL;
+        goto cleanup;
     }
 
-    schnorr_pubkey* pub = malloc(sizeof(schnorr_pubkey));
+    pub = malloc(sizeof(schnorr_pubkey));
     if(pub == NULL) {
-        return NULL;
+        goto cleanup;
     }
+    pub->A = NULL;
 
-    EC_GROUP* group = EC_GROUP_new_by_curve_name(NID_secp256k1);
+    group = EC_GROUP_new_by_curve_name(NID_secp256k1);
     if(group == NULL) {
-        return NULL;
+        goto cleanup;
     }
 
     const EC_POINT* G = EC_GROUP_get0_generator(group);
     if(G == NULL) {
-        return NULL;
+        goto cleanup;
     }
 
-    BN_CTX* ctx = BN_CTX_new();
+    ctx = BN_CTX_new();
     if(ctx == NULL) {
-        return NULL;
+        goto cleanup;
     }
 
     pub->A = EC_POINT_new(group);
     if(pub->A == NULL) {
-        return NULL;
+        goto cleanup;
     }
 
     if(EC_POINT_mul(group, pub->A, NULL, G, dest->a, ctx) == 0) {
-        return NULL;
+        goto cleanup;
     }
 
     dest->pub = pub;
 
+    error = 0;
+
+    cleanup:
     BN_CTX_free(ctx);
     EC_GROUP_free(group);
+    if(error) {
+        if(pub != NULL) {
+            EC_POINT_free(pub->A);
+        }
+        free(pub);
+
+        if(dest != NULL) {
+            BN_free(dest->a);
+        }
+
+        free(dest);
+
+        return NULL;
+    }
 
     return dest;
 }
