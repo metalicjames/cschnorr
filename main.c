@@ -1,7 +1,7 @@
 #include "src/signature.h"
 
 int main() {
-    schnorr_key* key = schnorr_key_new(&key);
+    schnorr_key* key = schnorr_key_new();
     if(key == NULL) {
         return -1;
     }

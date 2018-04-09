@@ -37,11 +37,6 @@ int schnorr_sign(schnorr_sig** dest,
         return 0;
     }
 
-    (*dest)->R = EC_POINT_new(group);
-    if((*dest)->R == NULL) {
-        return 0;
-    }
-
     BIGNUM* k = BN_new();
     if(k == NULL) {
         return 0;
@@ -61,8 +56,12 @@ int schnorr_sign(schnorr_sig** dest,
         return 0;
     }
 
-    genR:
-    if(EC_POINT_mul(group, (*dest)->R, NULL, G, k, ctx) == 0) {
+    EC_POINT* R = EC_POINT_new(group);
+    if(R == NULL) {
+        return 0;
+    }
+
+    if(EC_POINT_mul(group, R, NULL, G, k, ctx) == 0) {
         return 0;
     }
 
@@ -76,7 +75,7 @@ int schnorr_sign(schnorr_sig** dest,
         return 0;
     }
 
-    if(EC_POINT_get_affine_coordinates_GFp(group, (*dest)->R, Rx, Ry, ctx) == 0) {
+    if(EC_POINT_get_affine_coordinates_GFp(group, R, Rx, Ry, ctx) == 0) {
         return 0;
     }
 
@@ -91,12 +90,16 @@ int schnorr_sign(schnorr_sig** dest,
         }
         BN_free(tmp);
 
-        goto genR;
+        if(EC_POINT_mul(group, R, NULL, G, k, ctx) == 0) {
+            return 0;
+        }
+
+        if(EC_POINT_get_affine_coordinates_GFp(group, R, Rx, Ry, ctx) == 0) {
+            return 0;
+        }
     }
 
-    unsigned char r[32];
-
-    if(BN_bn2bin(Rx, (unsigned char*)&r) <= 0) {
+    if(BN_bn2bin(Rx, (unsigned char*)&(*dest)->r) <= 0) {
         return 0;
     }
 
@@ -106,7 +109,7 @@ int schnorr_sign(schnorr_sig** dest,
     }
 
     unsigned char payload[64];
-    memcpy(&payload, r, 32);
+    memcpy(&payload, (*dest)->r, 32);
     memcpy(((unsigned char*)&payload) + 32, msgHash, 32);
 
     unsigned char h[32];
@@ -167,7 +170,6 @@ int schnorr_sign(schnorr_sig** dest,
 }
 
 void schnorr_sig_free(schnorr_sig* sig) {
-    EC_POINT_free(sig->R);
     BN_free(sig->s);
     free(sig);
 }
@@ -179,10 +181,6 @@ int schnorr_verify(const schnorr_sig* sig,
     EC_GROUP* group = EC_GROUP_new_by_curve_name(NID_secp256k1);
     if(group == NULL) {
         return 0;
-    }
-
-    if(EC_POINT_is_at_infinity(group, sig->R) == 1) {
-        return -1;
     }
 
     BN_CTX* ctx = BN_CTX_new();
@@ -199,27 +197,8 @@ int schnorr_verify(const schnorr_sig* sig,
         return 0;
     }
 
-    BIGNUM* Rx = BN_new();
-    if(Rx == NULL) {
-        return 0;
-    }
-    
-    BIGNUM* Ry = BN_new();
-    if(Ry == NULL) {
-        return 0;
-    }
-
-    if(EC_POINT_get_affine_coordinates_GFp(group, sig->R, Rx, Ry, ctx) == 0) {
-        return 0;
-    }
-
-    if(BN_is_odd(Ry)) {
+    if(BN_cmp(sig->s, order) != -1) {
         return -1;
-    }
-
-    unsigned char r[32];
-    if(BN_bn2bin(Rx, (unsigned char*)&r) <= 0) {
-        return 0;
     }
 
     unsigned char msgHash[32];
@@ -228,7 +207,7 @@ int schnorr_verify(const schnorr_sig* sig,
     }
 
     unsigned char payload[64];
-    memcpy(&payload, r, 32);
+    memcpy(&payload, sig->r, 32);
     memcpy(((unsigned char*)&payload) + 32, msgHash, 32);
 
     unsigned char h[32];
@@ -246,11 +225,11 @@ int schnorr_verify(const schnorr_sig* sig,
     }
 
     if(BN_is_zero(BNh) == 1) {
-        return 0;
+        return -1;
     }
     
     if(BN_cmp(BNh, order) != -1) {
-        return 0;
+        return -1;
     }
 
     EC_POINT* R = EC_POINT_new(group);
@@ -262,21 +241,21 @@ int schnorr_verify(const schnorr_sig* sig,
         return 0;
     }
 
-    BIGNUM* RRx = BN_new();
-    if(RRx == NULL) {
+    BIGNUM* Rx = BN_new();
+    if(Rx == NULL) {
         return 0;
     }
     
-    BIGNUM* RRy = BN_new();
-    if(RRy == NULL) {
+    BIGNUM* Ry = BN_new();
+    if(Ry == NULL) {
         return 0;
     }
 
-    if(EC_POINT_get_affine_coordinates_GFp(group, R, RRx, RRy, ctx) == 0) {
+    if(EC_POINT_get_affine_coordinates_GFp(group, R, Rx, Ry, ctx) == 0) {
         return 0;
     }
 
-    if(BN_is_odd(RRy)) {
+    if(BN_is_odd(Ry)) {
         return -1;
     }
 
@@ -284,24 +263,24 @@ int schnorr_verify(const schnorr_sig* sig,
         return -1;
     }
 
-    const int ret = EC_POINT_cmp(group, R, sig->R, ctx);
-    if(ret == -1) {
+    unsigned char x[32];
+    if(BN_bn2bin(Rx, (unsigned char*)&x) <= 0) {
         return 0;
     }
-    
-    if(ret == 1) {
-        return -1;
-    }
+
+    const int ret = memcmp(x, sig->r, 32);
 
     EC_GROUP_free(group);
     EC_POINT_free(R);
     BN_CTX_free(ctx);
-    BN_free(RRx);
-    BN_free(RRy);
     BN_free(Rx);
     BN_free(Ry);
     BN_free(BNh);
     BN_free(order);
 
-    return 1;
+    if(ret == 0) {
+        return 1;
+    } else {
+        return -1;
+    }
 }
