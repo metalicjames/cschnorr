@@ -23,37 +23,21 @@ int hash(unsigned char* out, const unsigned char* in, const size_t len) {
     return SHA256_DIGEST_LENGTH;
 }
 
-int gen_r(unsigned char* r,
+int gen_r(const schnorr_context* ctx,
+          unsigned char* r,
           BIGNUM* k) {
-    EC_GROUP* group = NULL;
-    BN_CTX* ctx = NULL;
     EC_POINT* R = NULL;
     BIGNUM* Rx = NULL;
     BIGNUM* Ry = NULL;
     BIGNUM* tmp = NULL;
     int error = 1;
-    
-    group = EC_GROUP_new_by_curve_name(NID_secp256k1);
-    if(group == NULL) {
-        goto cleanup;
-    }
 
-    ctx = BN_CTX_new();
-    if(ctx == NULL) {
-        goto cleanup;
-    }
-
-    const EC_POINT* G = EC_GROUP_get0_generator(group);
-    if(G == NULL) {
-        goto cleanup;
-    }
-
-    R = EC_POINT_new(group);
+    R = EC_POINT_new(ctx->group);
     if(R == NULL) {
         goto cleanup;
     }
 
-    if(EC_POINT_mul(group, R, NULL, G, k, ctx) == 0) {
+    if(EC_POINT_mul(ctx->group, R, NULL, ctx->G, k, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
@@ -67,7 +51,7 @@ int gen_r(unsigned char* r,
         goto cleanup;
     }
 
-    if(EC_POINT_get_affine_coordinates_GFp(group, R, Rx, Ry, ctx) == 0) {
+    if(EC_POINT_get_affine_coordinates_GFp(ctx->group, R, Rx, Ry, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
@@ -81,11 +65,11 @@ int gen_r(unsigned char* r,
             goto cleanup;
         }
 
-        if(EC_POINT_mul(group, R, NULL, G, k, ctx) == 0) {
+        if(EC_POINT_mul(ctx->group, R, NULL, ctx->G, k, ctx->bn_ctx) == 0) {
             goto cleanup;
         }
 
-        if(EC_POINT_get_affine_coordinates_GFp(group, R, Rx, Ry, ctx) == 0) {
+        if(EC_POINT_get_affine_coordinates_GFp(ctx->group, R, Rx, Ry, ctx->bn_ctx) == 0) {
             goto cleanup;
         }
     }
@@ -101,8 +85,6 @@ int gen_r(unsigned char* r,
     BN_free(Ry);
     EC_POINT_free(R);
     BN_free(tmp);
-    BN_CTX_free(ctx);
-    EC_GROUP_free(group);
     if(error) {
         return 0;
     }
@@ -110,13 +92,12 @@ int gen_r(unsigned char* r,
     return 1;
 }
 
-int schnorr_sign(schnorr_sig** dest, 
+int schnorr_sign(const schnorr_context* ctx,
+                 schnorr_sig** dest, 
                  const schnorr_key* key, 
                  const unsigned char* msg, 
                  const size_t len) {
-    EC_GROUP* group = NULL;
     BIGNUM* k = NULL;
-    BN_CTX* ctx = NULL;
     EC_POINT* R = NULL;
     BIGNUM* BNh = NULL;
     BIGNUM* s = NULL;
@@ -128,11 +109,6 @@ int schnorr_sign(schnorr_sig** dest,
     }
     (*dest)->s = NULL;
 
-    group = EC_GROUP_new_by_curve_name(NID_secp256k1);
-    if(group == NULL) {
-        goto cleanup;
-    }
-
     k = BN_new();
     if(k == NULL) {
         goto cleanup;
@@ -142,7 +118,7 @@ int schnorr_sign(schnorr_sig** dest,
         goto cleanup;
     }
 
-    if(gen_r((*dest)->r, k) == 0) {
+    if(gen_r(ctx, (*dest)->r, k) == 0) {
         goto cleanup;
     }
 
@@ -151,21 +127,16 @@ int schnorr_sign(schnorr_sig** dest,
         goto cleanup;
     }
 
-    if(gen_h(msg, len, (*dest)->r, BNh) == 0) {
+    if(gen_h(ctx, msg, len, (*dest)->r, BNh) == 0) {
         goto cleanup;
     }
 
-    ctx = BN_CTX_new();
-    if(ctx == NULL) {
-        goto cleanup;
-    }
-    
     s = BN_new();
     if(s == NULL) {
         goto cleanup;
     }
 
-    if(BN_mul(s, BNh, key->a, ctx) == 0) {
+    if(BN_mul(s, BNh, key->a, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
@@ -178,9 +149,7 @@ int schnorr_sign(schnorr_sig** dest,
     error = 0;
 
     cleanup:
-    EC_GROUP_free(group);
     BN_free(BNh);
-    BN_CTX_free(ctx);
     BN_free(k);
     if(error) {
         if(*dest != NULL) {
@@ -196,43 +165,24 @@ int schnorr_sign(schnorr_sig** dest,
 }
 
 void schnorr_sig_free(schnorr_sig* sig) {
-    BN_free(sig->s);
-    free(sig);
+    if(sig != NULL) {
+        BN_free(sig->s);
+        free(sig);
+    }
 }
 
-int schnorr_verify(const schnorr_sig* sig,
+int schnorr_verify(const schnorr_context* ctx,
+                   const schnorr_sig* sig,
                    const schnorr_pubkey* pubkey,
                    const unsigned char* msg,
                    const size_t len) {
-    EC_GROUP* group = NULL;
-    BN_CTX* ctx = NULL;
-    BIGNUM* order = NULL;
     BIGNUM* BNh = NULL;
     EC_POINT* R = NULL;
     BIGNUM* Rx = NULL;
     BIGNUM* Ry = NULL; 
     int retval = 0;
 
-    group = EC_GROUP_new_by_curve_name(NID_secp256k1);
-    if(group == NULL) {
-        goto cleanup;
-    }
-
-    ctx = BN_CTX_new();
-    if(ctx == NULL) {
-        goto cleanup;
-    }
-
-    order = BN_new();
-    if(order == NULL) {
-        goto cleanup;
-    }
-
-    if(EC_GROUP_get_order(group, order, ctx) == 0) {
-        goto cleanup;
-    }
-
-    if(BN_cmp(sig->s, order) != -1) {
+    if(BN_cmp(sig->s, ctx->order) != -1) {
         retval = -1;
         goto cleanup;
     }
@@ -242,18 +192,18 @@ int schnorr_verify(const schnorr_sig* sig,
         goto cleanup;
     }
 
-    const int genRes = gen_h(msg, len, sig->r, BNh);
+    const int genRes = gen_h(ctx, msg, len, sig->r, BNh);
     if(genRes != 1) {
         retval = genRes;
         goto cleanup;
     }
 
-    R = EC_POINT_new(group);
+    R = EC_POINT_new(ctx->group);
     if(R == NULL) {
         goto cleanup;
     }
 
-    if(EC_POINT_mul(group, R, sig->s, pubkey->A, BNh, ctx) == 0) {
+    if(EC_POINT_mul(ctx->group, R, sig->s, pubkey->A, BNh, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
@@ -267,7 +217,7 @@ int schnorr_verify(const schnorr_sig* sig,
         goto cleanup;
     }
 
-    if(EC_POINT_get_affine_coordinates_GFp(group, R, Rx, Ry, ctx) == 0) {
+    if(EC_POINT_get_affine_coordinates_GFp(ctx->group, R, Rx, Ry, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
@@ -276,7 +226,7 @@ int schnorr_verify(const schnorr_sig* sig,
         goto cleanup;
     }
 
-    if(EC_POINT_is_at_infinity(group, R) == 1) {
+    if(EC_POINT_is_at_infinity(ctx->group, R) == 1) {
         retval = -1;
         goto cleanup;
     }
@@ -291,13 +241,10 @@ int schnorr_verify(const schnorr_sig* sig,
     retval = 1;
 
     cleanup:
-    EC_GROUP_free(group);
     EC_POINT_free(R);
-    BN_CTX_free(ctx);
     BN_free(Rx);
     BN_free(Ry);
     BN_free(BNh);
-    BN_free(order);
 
     if(retval != 1) {
         return retval;
@@ -310,15 +257,14 @@ int schnorr_verify(const schnorr_sig* sig,
     }
 }
 
-int gen_h(const unsigned char* msg, const size_t len, const unsigned char* r, BIGNUM* out) {
-    BN_CTX* ctx = NULL;
-    BIGNUM* order = NULL;
-    EC_GROUP* group = NULL;
-    int error = 0;
-    
+int gen_h(const schnorr_context* ctx,
+          const unsigned char* msg, 
+          const size_t len, 
+          const unsigned char* r, 
+          BIGNUM* out) {  
     unsigned char msgHash[32];
     if(hash((unsigned char*)&msgHash, msg, len) == 0) {
-        goto cleanup;
+        return 0;
     }
 
     unsigned char payload[64];
@@ -327,58 +273,30 @@ int gen_h(const unsigned char* msg, const size_t len, const unsigned char* r, BI
 
     unsigned char h[32];
     if(hash((unsigned char*)&h, payload, 64) == 0) {
-        goto cleanup;
+        return 0;
     }
    
     if(BN_bin2bn((unsigned char*)&h, 32, out) == NULL) {
-        goto cleanup;
+        return 0;
     }
 
     if(BN_is_zero(out) == 1) {
-        error = -1;
-        goto cleanup;
-    }
-
-    order = BN_new();
-    if(order == NULL) {
-        goto cleanup;
-    }
-
-    ctx = BN_CTX_new();
-    if(ctx == NULL) {
-        goto cleanup;
-    }
-
-    group = EC_GROUP_new_by_curve_name(NID_secp256k1);
-    if(group == NULL) {
-        goto cleanup;
-    }
-
-    if(EC_GROUP_get_order(group, order, ctx) == 0) {
-        goto cleanup;
+        return -1;
     }
     
-    if(BN_cmp(out, order) != -1) {
-        error = -1;
-        goto cleanup;
+    if(BN_cmp(out, ctx->order) != -1) {
+        return -1;
     }
 
-    error = 1;
-
-    cleanup:
-    EC_GROUP_free(group);
-    BN_CTX_free(ctx);
-    BN_free(order);
-
-    return error;
+    return 1;
 }
 
-int committed_r_sign(committed_r_sig** dest,
+int committed_r_sign(const schnorr_context* ctx,
+                     committed_r_sig** dest,
                      const committed_r_key* key,
                      const unsigned char* msg,
                      const size_t len) {
     BIGNUM* BNh = NULL;
-    BN_CTX* ctx = NULL;
     int error = 1;
     
     *dest = malloc(sizeof(committed_r_sig));
@@ -392,12 +310,7 @@ int committed_r_sign(committed_r_sig** dest,
         goto cleanup;
     }
 
-    if(gen_h(msg, len, key->pub->r, BNh) == 0) {
-        goto cleanup;
-    }
-
-    ctx = BN_CTX_new();
-    if(ctx == NULL) {
+    if(gen_h(ctx, msg, len, key->pub->r, BNh) == 0) {
         goto cleanup;
     }
 
@@ -406,7 +319,7 @@ int committed_r_sign(committed_r_sig** dest,
         goto cleanup;
     }
 
-    if(BN_mul((*dest)->s, BNh, key->a, ctx) == 0) {
+    if(BN_mul((*dest)->s, BNh, key->a, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
@@ -418,7 +331,6 @@ int committed_r_sign(committed_r_sig** dest,
 
     cleanup:
     BN_free(BNh);
-    BN_CTX_free(ctx);
     if(error) {
         if(*dest != NULL) {
             BN_free((*dest)->s);
@@ -430,7 +342,8 @@ int committed_r_sign(committed_r_sig** dest,
     return 1;
 }
 
-int committed_r_verify(const committed_r_sig* sig,
+int committed_r_verify(const schnorr_context* ctx,
+                       const committed_r_sig* sig,
                        const committed_r_pubkey* pubkey,
                        const unsigned char* msg,
                        const size_t len) {
@@ -453,7 +366,7 @@ int committed_r_verify(const committed_r_sig* sig,
     
     pKey->A = pubkey->A;
 
-    retval = schnorr_verify(sSig, pKey, msg, len);
+    retval = schnorr_verify(ctx, sSig, pKey, msg, len);
 
     cleanup:
     free(sSig);
@@ -463,11 +376,14 @@ int committed_r_verify(const committed_r_sig* sig,
 }
 
 void committed_r_sig_free(committed_r_sig* sig) {
-    BN_free(sig->s);
-    free(sig);
+    if(sig != NULL) {
+        BN_free(sig->s);
+        free(sig);
+    }
 }
 
-int committed_r_recover(const committed_r_sig* sig1,
+int committed_r_recover(const schnorr_context* ctx,
+                        const committed_r_sig* sig1,
                         const unsigned char* msg1,
                         const size_t len1,
                         const committed_r_sig* sig2,
@@ -477,8 +393,6 @@ int committed_r_recover(const committed_r_sig* sig1,
                         committed_r_key** dest) {
     BIGNUM* h1 = NULL;
     BIGNUM* h2 = NULL;
-    BN_CTX* ctx = NULL;
-    EC_GROUP* group = NULL;
     int retval = 0;
 
     *dest = malloc(sizeof(committed_r_key));
@@ -505,12 +419,7 @@ int committed_r_recover(const committed_r_sig* sig1,
     }
     (*dest)->pub->A = NULL;
 
-    group = EC_GROUP_new_by_curve_name(NID_secp256k1);
-    if(group == NULL) {
-        goto cleanup;
-    }
-
-    (*dest)->pub->A = EC_POINT_new(group);
+    (*dest)->pub->A = EC_POINT_new(ctx->group);
     if((*dest)->pub->A == NULL) {
         goto cleanup;
     }
@@ -524,7 +433,7 @@ int committed_r_recover(const committed_r_sig* sig1,
         goto cleanup;
     }
 
-    int genRes = gen_h(msg1, len1, pubkey->r, h1);
+    int genRes = gen_h(ctx, msg1, len1, pubkey->r, h1);
     if(genRes != 1) {
         retval = genRes;
         goto cleanup;
@@ -535,7 +444,7 @@ int committed_r_recover(const committed_r_sig* sig1,
         goto cleanup;
     }
 
-    genRes = gen_h(msg2, len2, pubkey->r, h2);
+    genRes = gen_h(ctx, msg2, len2, pubkey->r, h2);
     if(genRes != 1) {
         retval = genRes;
         goto cleanup;
@@ -545,16 +454,11 @@ int committed_r_recover(const committed_r_sig* sig1,
         goto cleanup;
     }
 
-    ctx = BN_CTX_new();
-    if(ctx == NULL) {
+    if(BN_div((*dest)->a, NULL, (*dest)->a, h1, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
-    if(BN_div((*dest)->a, NULL, (*dest)->a, h1, ctx) == 0) {
-        goto cleanup;
-    }
-
-    if(BN_mul((*dest)->k, h2, (*dest)->a, ctx) == 0) {
+    if(BN_mul((*dest)->k, h2, (*dest)->a, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
@@ -562,26 +466,19 @@ int committed_r_recover(const committed_r_sig* sig1,
         goto cleanup;
     }
 
-    if(gen_r((*dest)->pub->r, (*dest)->k) == 0) {
+    if(gen_r(ctx, (*dest)->pub->r, (*dest)->k) == 0) {
         goto cleanup;
     }
 
-    const EC_POINT* G = EC_GROUP_get0_generator(group);
-    if(G == NULL) {
-        goto cleanup;
-    }
-
-    if(EC_POINT_mul(group, (*dest)->pub->A, NULL, G, (*dest)->a, ctx) == 0) {
+    if(EC_POINT_mul(ctx->group, (*dest)->pub->A, NULL, ctx->G, (*dest)->a, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
     retval = 1;
 
     cleanup:
-    BN_CTX_free(ctx);
     BN_free(h1);
     BN_free(h2);
-    EC_GROUP_free(group);
     if(retval != 1) {
         if(*dest != NULL) {
             BN_free((*dest)->a);

@@ -3,11 +3,9 @@
 
 #include <openssl/obj_mac.h>
 
-schnorr_key* schnorr_key_new() {
+schnorr_key* schnorr_key_new(const schnorr_context* ctx) {
     schnorr_key* dest = NULL;
     schnorr_pubkey* pub = NULL;
-    EC_GROUP* group = NULL;
-    BN_CTX* ctx = NULL;
     int error = 1;
 
     dest = malloc(sizeof(schnorr_key));
@@ -35,27 +33,12 @@ schnorr_key* schnorr_key_new() {
     }
     pub->A = NULL;
 
-    group = EC_GROUP_new_by_curve_name(NID_secp256k1);
-    if(group == NULL) {
-        goto cleanup;
-    }
-
-    const EC_POINT* G = EC_GROUP_get0_generator(group);
-    if(G == NULL) {
-        goto cleanup;
-    }
-
-    ctx = BN_CTX_new();
-    if(ctx == NULL) {
-        goto cleanup;
-    }
-
-    pub->A = EC_POINT_new(group);
+    pub->A = EC_POINT_new(ctx->group);
     if(pub->A == NULL) {
         goto cleanup;
     }
 
-    if(EC_POINT_mul(group, pub->A, NULL, G, dest->a, ctx) == 0) {
+    if(EC_POINT_mul(ctx->group, pub->A, NULL, ctx->G, dest->a, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
@@ -64,8 +47,6 @@ schnorr_key* schnorr_key_new() {
     error = 0;
 
     cleanup:
-    BN_CTX_free(ctx);
-    EC_GROUP_free(group);
     if(error) {
         if(pub != NULL) {
             EC_POINT_free(pub->A);
@@ -85,19 +66,21 @@ schnorr_key* schnorr_key_new() {
 }
 
 void schnorr_key_free(schnorr_key* key) {
-    EC_POINT_free(key->pub->A);
-    free(key->pub);
-    BN_free(key->a);
-    free(key);
+    if(key != NULL) {
+        EC_POINT_free(key->pub->A);
+        free(key->pub);
+        BN_free(key->a);
+        free(key);
+    }
 }
 
-committed_r_key* committed_r_key_new() {
+committed_r_key* committed_r_key_new(const schnorr_context* ctx) {
     committed_r_key* ret = NULL;
     schnorr_key* key = NULL;
     BIGNUM* k = NULL;
     int error = 1;
 
-    key = schnorr_key_new();
+    key = schnorr_key_new(ctx);
     if(key == NULL) {
         goto cleanup;
     }
@@ -124,7 +107,7 @@ committed_r_key* committed_r_key_new() {
         goto cleanup;
     }
 
-    if(gen_r(ret->pub->r, k) == 0) {
+    if(gen_r(ctx, ret->pub->r, k) == 0) {
         goto cleanup;
     }
 
@@ -148,9 +131,11 @@ committed_r_key* committed_r_key_new() {
 }
 
 void committed_r_key_free(committed_r_key* key) {
-    EC_POINT_free(key->pub->A);
-    free(key->pub);
-    BN_free(key->a);
-    BN_free(key->k);
-    free(key);
+    if(key != NULL) {
+        EC_POINT_free(key->pub->A);
+        free(key->pub);
+        BN_free(key->a);
+        BN_free(key->k);
+        free(key);
+    }
 }
