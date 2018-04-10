@@ -38,10 +38,6 @@ int gen_r(unsigned char* r,
         goto cleanup;
     }
 
-    if(BN_rand(k, 256, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY) != 1) {
-        goto cleanup;
-    }
-
     ctx = BN_CTX_new();
     if(ctx == NULL) {
         goto cleanup;
@@ -139,6 +135,10 @@ int schnorr_sign(schnorr_sig** dest,
 
     k = BN_new();
     if(k == NULL) {
+        goto cleanup;
+    }
+
+    if(BN_rand(k, 256, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY) != 1) {
         goto cleanup;
     }
 
@@ -465,4 +465,136 @@ int committed_r_verify(const committed_r_sig* sig,
 void committed_r_sig_free(committed_r_sig* sig) {
     BN_free(sig->s);
     free(sig);
+}
+
+int committed_r_recover(const committed_r_sig* sig1,
+                        const unsigned char* msg1,
+                        const size_t len1,
+                        const committed_r_sig* sig2,
+                        const unsigned char* msg2,
+                        const size_t len2,
+                        const committed_r_pubkey* pubkey,
+                        committed_r_key** dest) {
+    BIGNUM* h1 = NULL;
+    BIGNUM* h2 = NULL;
+    BN_CTX* ctx = NULL;
+    EC_GROUP* group = NULL;
+    int retval = 0;
+
+    *dest = malloc(sizeof(committed_r_key));
+    if(*dest == NULL) {
+        goto cleanup;
+    }
+    (*dest)->a = NULL;
+    (*dest)->k = NULL;
+    (*dest)->pub = NULL;
+
+    (*dest)->a = BN_new();
+    if((*dest)->a == NULL) {
+        goto cleanup;
+    }
+
+    (*dest)->k = BN_new();
+    if((*dest)->k == NULL) {
+        goto cleanup;
+    }
+
+    (*dest)->pub = malloc(sizeof(committed_r_pubkey));
+    if((*dest)->pub == NULL) {
+        goto cleanup;
+    }
+    (*dest)->pub->A = NULL;
+
+    group = EC_GROUP_new_by_curve_name(NID_secp256k1);
+    if(group == NULL) {
+        goto cleanup;
+    }
+
+    (*dest)->pub->A = EC_POINT_new(group);
+    if((*dest)->pub->A == NULL) {
+        goto cleanup;
+    }
+
+    if(BN_sub((*dest)->a, sig2->s, sig1->s) == 0) {
+        goto cleanup;
+    }
+
+    h1 = BN_new();
+    if(h1 == NULL) {
+        goto cleanup;
+    }
+
+    int genRes = gen_h(msg1, len1, pubkey->r, h1);
+    if(genRes != 1) {
+        retval = genRes;
+        goto cleanup;
+    }
+
+    h2 = BN_new();
+    if(h2 == NULL) {
+        goto cleanup;
+    }
+
+    genRes = gen_h(msg2, len2, pubkey->r, h2);
+    if(genRes != 1) {
+        retval = genRes;
+        goto cleanup;
+    }
+
+    if(BN_sub(h1, h1, h2) == 0) {
+        goto cleanup;
+    }
+
+    ctx = BN_CTX_new();
+    if(ctx == NULL) {
+        goto cleanup;
+    }
+
+    if(BN_div((*dest)->a, NULL, (*dest)->a, h1, ctx) == 0) {
+        goto cleanup;
+    }
+
+    if(BN_mul((*dest)->k, h2, (*dest)->a, ctx) == 0) {
+        goto cleanup;
+    }
+
+    if(BN_add((*dest)->k, sig2->s, (*dest)->k) == 0) {
+        goto cleanup;
+    }
+
+    if(gen_r((*dest)->pub->r, (*dest)->k) == 0) {
+        goto cleanup;
+    }
+
+    const EC_POINT* G = EC_GROUP_get0_generator(group);
+    if(G == NULL) {
+        goto cleanup;
+    }
+
+    if(EC_POINT_mul(group, (*dest)->pub->A, NULL, G, (*dest)->a, ctx) == 0) {
+        goto cleanup;
+    }
+
+    retval = 1;
+
+    cleanup:
+    BN_CTX_free(ctx);
+    BN_free(h1);
+    BN_free(h2);
+    EC_GROUP_free(group);
+    if(retval != 1) {
+        if(*dest != NULL) {
+            BN_free((*dest)->a);
+            BN_free((*dest)->k);
+            if((*dest)->pub != NULL) {
+                EC_POINT_free((*dest)->pub->A);
+                free((*dest)->pub);
+            }
+            free(*dest);
+        }
+
+        return 0;
+    }
+
+    return 1;
 }

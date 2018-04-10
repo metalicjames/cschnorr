@@ -120,6 +120,10 @@ committed_r_key* committed_r_key_new() {
         goto cleanup;
     }
 
+    if(BN_rand(k, 256, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY) != 1) {
+        goto cleanup;
+    }
+
     if(gen_r(ret->pub->r, k) == 0) {
         goto cleanup;
     }

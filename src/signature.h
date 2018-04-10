@@ -45,4 +45,13 @@ int committed_r_verify(const committed_r_sig* sig,
 
 void committed_r_sig_free(committed_r_sig* sig);
 
+int committed_r_recover(const committed_r_sig* sig1,
+                        const unsigned char* msg1,
+                        const size_t len1,
+                        const committed_r_sig* sig2,
+                        const unsigned char* msg2,
+                        const size_t len2,
+                        const committed_r_pubkey* pubkey,
+                        committed_r_key** dest);
+
 #endif
