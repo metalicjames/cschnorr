@@ -15,4 +15,18 @@ typedef struct {
 schnorr_key* schnorr_key_new();
 void schnorr_key_free(schnorr_key* key);
 
+typedef struct {
+    EC_POINT* A;
+    unsigned char r[32];
+} committed_r_pubkey;
+
+typedef struct {
+    BIGNUM* a;
+    BIGNUM* k;
+    committed_r_pubkey* pub;
+} committed_r_key;
+
+committed_r_key* committed_r_key_new();
+void committed_r_key_free(committed_r_key* key);
+
 #endif

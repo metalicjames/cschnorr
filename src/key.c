@@ -1,4 +1,5 @@
 #include "key.h"
+#include "signature.h"
 
 #include <openssl/obj_mac.h>
 
@@ -87,5 +88,65 @@ void schnorr_key_free(schnorr_key* key) {
     EC_POINT_free(key->pub->A);
     free(key->pub);
     BN_free(key->a);
+    free(key);
+}
+
+committed_r_key* committed_r_key_new() {
+    committed_r_key* ret = NULL;
+    schnorr_key* key = NULL;
+    BIGNUM* k = NULL;
+    int error = 1;
+
+    key = schnorr_key_new();
+    if(key == NULL) {
+        goto cleanup;
+    }
+
+    ret = malloc(sizeof(committed_r_key));
+    if(ret == NULL) {
+        goto cleanup;
+    }
+    ret->pub = NULL;
+
+    ret->a = key->a;
+
+    ret->pub = malloc(sizeof(committed_r_pubkey));
+    if(ret == NULL) {
+        goto cleanup;
+    }
+
+    k = BN_new();
+    if(k == NULL) {
+        goto cleanup;
+    }
+
+    if(gen_r(ret->pub->r, k) == 0) {
+        goto cleanup;
+    }
+
+    ret->k = k;
+    ret->pub->A = key->pub->A;
+
+    error = 0;
+
+    cleanup:
+    if(error) {
+        BN_free(k);
+        schnorr_key_free(key);
+        free(ret->pub);
+        free(ret);
+        return NULL;
+    } else {
+        free(key->pub);
+    }
+
+    return ret;
+}
+
+void committed_r_key_free(committed_r_key* key) {
+    EC_POINT_free(key->pub->A);
+    free(key->pub);
+    BN_free(key->a);
+    BN_free(key->k);
     free(key);
 }

@@ -23,35 +23,18 @@ int hash(unsigned char* out, const unsigned char* in, const size_t len) {
     return SHA256_DIGEST_LENGTH;
 }
 
-int schnorr_sign(schnorr_sig** dest, 
-                 const schnorr_key* key, 
-                 const unsigned char* msg, 
-                 const size_t len) {
+int gen_r(unsigned char* r,
+          BIGNUM* k) {
     EC_GROUP* group = NULL;
-    BIGNUM* k = NULL;
     BN_CTX* ctx = NULL;
     EC_POINT* R = NULL;
     BIGNUM* Rx = NULL;
     BIGNUM* Ry = NULL;
     BIGNUM* tmp = NULL;
-    BIGNUM* BNh = NULL;
-    BIGNUM* order = NULL;
-    BIGNUM* s = NULL;
     int error = 1;
-
-    *dest = malloc(sizeof(schnorr_sig));
-    if(*dest == NULL) {
-        goto cleanup;
-    }
-    (*dest)->s = NULL;
-
+    
     group = EC_GROUP_new_by_curve_name(NID_secp256k1);
     if(group == NULL) {
-        goto cleanup;
-    }
-
-    k = BN_new();
-    if(k == NULL) {
         goto cleanup;
     }
 
@@ -111,21 +94,55 @@ int schnorr_sign(schnorr_sig** dest,
         }
     }
 
-    if(BN_bn2bin(Rx, (unsigned char*)&(*dest)->r) <= 0) {
+    if(BN_bn2bin(Rx, r) <= 0) {
         goto cleanup;
     }
 
-    unsigned char msgHash[32];
-    if(hash((unsigned char*)&msgHash, msg, len) == 0) {
+    error = 0;
+
+    cleanup:
+    BN_free(Rx);
+    BN_free(Ry);
+    EC_POINT_free(R);
+    BN_free(tmp);
+    BN_CTX_free(ctx);
+    EC_GROUP_free(group);
+    if(error) {
+        return 0;
+    }
+
+    return 1;
+}
+
+int schnorr_sign(schnorr_sig** dest, 
+                 const schnorr_key* key, 
+                 const unsigned char* msg, 
+                 const size_t len) {
+    EC_GROUP* group = NULL;
+    BIGNUM* k = NULL;
+    BN_CTX* ctx = NULL;
+    EC_POINT* R = NULL;
+    BIGNUM* BNh = NULL;
+    BIGNUM* s = NULL;
+    int error = 1;
+
+    *dest = malloc(sizeof(schnorr_sig));
+    if(*dest == NULL) {
+        goto cleanup;
+    }
+    (*dest)->s = NULL;
+
+    group = EC_GROUP_new_by_curve_name(NID_secp256k1);
+    if(group == NULL) {
         goto cleanup;
     }
 
-    unsigned char payload[64];
-    memcpy(&payload, (*dest)->r, 32);
-    memcpy(((unsigned char*)&payload) + 32, msgHash, 32);
+    k = BN_new();
+    if(k == NULL) {
+        goto cleanup;
+    }
 
-    unsigned char h[32];
-    if(hash((unsigned char*)&h, payload, 64) == 0) {
+    if(gen_r((*dest)->r, k) == 0) {
         goto cleanup;
     }
 
@@ -134,27 +151,15 @@ int schnorr_sign(schnorr_sig** dest,
         goto cleanup;
     }
 
-    if(BN_bin2bn((unsigned char*)&h, 32, BNh) == NULL) {
+    if(gen_h(msg, len, (*dest)->r, BNh) == 0) {
         goto cleanup;
     }
 
-    if(BN_is_zero(BNh) == 1) {
-        goto cleanup;
-    }
-
-    order = BN_new();
-    if(order == NULL) {
-        goto cleanup;
-    }
-
-    if(EC_GROUP_get_order(group, order, ctx) == 0) {
+    ctx = BN_CTX_new();
+    if(ctx == NULL) {
         goto cleanup;
     }
     
-    if(BN_cmp(BNh, order) != -1) {
-        goto cleanup;
-    }
-
     s = BN_new();
     if(s == NULL) {
         goto cleanup;
@@ -174,13 +179,9 @@ int schnorr_sign(schnorr_sig** dest,
 
     cleanup:
     EC_GROUP_free(group);
-    BN_free(order);
     BN_free(BNh);
-    BN_free(Rx);
-    BN_free(Ry);
     BN_CTX_free(ctx);
     BN_free(k);
-    BN_free(tmp);
     if(error) {
         if(*dest != NULL) {
             BN_free((*dest)->s);
@@ -236,36 +237,14 @@ int schnorr_verify(const schnorr_sig* sig,
         goto cleanup;
     }
 
-    unsigned char msgHash[32];
-    if(hash((unsigned char*)&msgHash, msg, len) == 0) {
-        goto cleanup;
-    }
-
-    unsigned char payload[64];
-    memcpy(&payload, sig->r, 32);
-    memcpy(((unsigned char*)&payload) + 32, msgHash, 32);
-
-    unsigned char h[32];
-    if(hash((unsigned char*)&h, payload, 64) == 0) {
-        goto cleanup;
-    }
-
     BNh = BN_new();
     if(BNh == NULL) {
         goto cleanup;
     }
 
-    if(BN_bin2bn((unsigned char*)&h, 32, BNh) == NULL) {
-        goto cleanup;
-    }
-
-    if(BN_is_zero(BNh) == 1) {
-        retval = -1;
-        goto cleanup;
-    }
-    
-    if(BN_cmp(BNh, order) != -1) {
-        retval = -1;
+    const int genRes = gen_h(msg, len, sig->r, BNh);
+    if(genRes != 1) {
+        retval = genRes;
         goto cleanup;
     }
 
@@ -329,4 +308,161 @@ int schnorr_verify(const schnorr_sig* sig,
     } else {
         return -1;
     }
+}
+
+int gen_h(const unsigned char* msg, const size_t len, const unsigned char* r, BIGNUM* out) {
+    BN_CTX* ctx = NULL;
+    BIGNUM* order = NULL;
+    EC_GROUP* group = NULL;
+    int error = 0;
+    
+    unsigned char msgHash[32];
+    if(hash((unsigned char*)&msgHash, msg, len) == 0) {
+        goto cleanup;
+    }
+
+    unsigned char payload[64];
+    memcpy(&payload, r, 32);
+    memcpy(((unsigned char*)&payload) + 32, msgHash, 32);
+
+    unsigned char h[32];
+    if(hash((unsigned char*)&h, payload, 64) == 0) {
+        goto cleanup;
+    }
+   
+    if(BN_bin2bn((unsigned char*)&h, 32, out) == NULL) {
+        goto cleanup;
+    }
+
+    if(BN_is_zero(out) == 1) {
+        error = -1;
+        goto cleanup;
+    }
+
+    order = BN_new();
+    if(order == NULL) {
+        goto cleanup;
+    }
+
+    ctx = BN_CTX_new();
+    if(ctx == NULL) {
+        goto cleanup;
+    }
+
+    group = EC_GROUP_new_by_curve_name(NID_secp256k1);
+    if(group == NULL) {
+        goto cleanup;
+    }
+
+    if(EC_GROUP_get_order(group, order, ctx) == 0) {
+        goto cleanup;
+    }
+    
+    if(BN_cmp(out, order) != -1) {
+        error = -1;
+        goto cleanup;
+    }
+
+    error = 1;
+
+    cleanup:
+    EC_GROUP_free(group);
+    BN_CTX_free(ctx);
+    BN_free(order);
+
+    return error;
+}
+
+int committed_r_sign(committed_r_sig** dest,
+                     const committed_r_key* key,
+                     const unsigned char* msg,
+                     const size_t len) {
+    BIGNUM* BNh = NULL;
+    BN_CTX* ctx = NULL;
+    int error = 1;
+    
+    *dest = malloc(sizeof(committed_r_sig));
+    if(*dest == NULL) {
+        goto cleanup;
+    }
+    (*dest)->s = NULL;
+
+    BNh = BN_new();
+    if(BNh == NULL) {
+        goto cleanup;
+    }
+
+    if(gen_h(msg, len, key->pub->r, BNh) == 0) {
+        goto cleanup;
+    }
+
+    ctx = BN_CTX_new();
+    if(ctx == NULL) {
+        goto cleanup;
+    }
+
+    (*dest)->s = BN_new();
+    if((*dest)->s == NULL) {
+        goto cleanup;
+    }
+
+    if(BN_mul((*dest)->s, BNh, key->a, ctx) == 0) {
+        goto cleanup;
+    }
+
+    if(BN_sub((*dest)->s, key->k, (*dest)->s) == 0) {
+        goto cleanup;
+    }
+
+    error = 0;
+
+    cleanup:
+    BN_free(BNh);
+    BN_CTX_free(ctx);
+    if(error) {
+        if(*dest != NULL) {
+            BN_free((*dest)->s);
+        }
+        free(*dest);
+        return 0;
+    }
+
+    return 1;
+}
+
+int committed_r_verify(const committed_r_sig* sig,
+                       const committed_r_pubkey* pubkey,
+                       const unsigned char* msg,
+                       const size_t len) {
+    schnorr_sig* sSig = NULL;
+    schnorr_pubkey* pKey = NULL;
+    int retval = 0;
+
+    sSig = malloc(sizeof(schnorr_sig));
+    if(sSig == NULL) {
+        goto cleanup;
+    }
+
+    memcpy(sSig->r, pubkey->r, 32);
+    sSig->s = sig->s;
+
+    pKey = malloc(sizeof(schnorr_pubkey));
+    if(pKey == NULL) {
+        goto cleanup;
+    }
+    
+    pKey->A = pubkey->A;
+
+    retval = schnorr_verify(sSig, pKey, msg, len);
+
+    cleanup:
+    free(sSig);
+    free(pKey);
+
+    return retval;
+}
+
+void committed_r_sig_free(committed_r_sig* sig) {
+    BN_free(sig->s);
+    free(sig);
 }

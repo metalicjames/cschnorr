@@ -23,4 +23,26 @@ int schnorr_verify(const schnorr_sig* sig,
 
 void schnorr_sig_free(schnorr_sig* sig);
 
+typedef struct {
+    BIGNUM* s;
+} committed_r_sig;
+
+int gen_r(unsigned char* r, BIGNUM* k);
+int gen_h(const unsigned char* msg, 
+          const size_t len, 
+          const unsigned char* r, 
+          BIGNUM* out);
+
+int committed_r_sign(committed_r_sig** dest,
+                     const committed_r_key* key,
+                     const unsigned char* msg,
+                     const size_t len);
+
+int committed_r_verify(const committed_r_sig* sig,
+                       const committed_r_pubkey* pubkey,
+                       const unsigned char* msg,
+                       const size_t len);
+
+void committed_r_sig_free(committed_r_sig* sig);
+
 #endif
