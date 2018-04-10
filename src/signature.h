@@ -60,4 +60,6 @@ int committed_r_recover(const schnorr_context* ctx,
                         const committed_r_pubkey* pubkey,
                         committed_r_key** dest);
 
+int hash(unsigned char* out, const unsigned char* in, const size_t len);
+
 #endif
