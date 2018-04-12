@@ -2,11 +2,12 @@
 #define MULTISIG_H_INCLUDED
 
 #include "key.h"
+#include "signature.h"
 
 int musig_sign(const schnorr_context* ctx,
                schnorr_sig** dest, 
                const committed_r_key* key,
-               const committed_r_pubkey* pubkeys,
+               committed_r_pubkey* pubkeys,
                const size_t n,
                const unsigned char* msg, 
                const size_t len);
