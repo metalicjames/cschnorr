@@ -1,4 +1,5 @@
 #include "src/signature.h"
+#include "src/multisig.h"
 
 int main() {
     schnorr_context* ctx = schnorr_context_new();
@@ -58,6 +59,43 @@ int main() {
     }
 
     if(schnorr_verify(ctx, forgery, &convPub, "random", 6) != 1) {
+        return -1;
+    }
+
+    committed_r_key* rkey2 = committed_r_key_new(ctx);
+    if(rkey2 == NULL) {
+        return -1;
+    }
+
+    committed_r_key* keys[2];
+    keys[0] = rkey;
+    keys[1] = rkey2;
+
+    committed_r_pubkey* pubkeys[2];
+    pubkeys[0] = rkey->pub;
+    pubkeys[1] = rkey2->pub;
+
+    schnorr_sig* sig1;
+    schnorr_sig* sig2;
+    schnorr_pubkey* pub;
+    if(musig_sign(ctx, &sig1, &pub, keys[0], pubkeys, 2, "hello", 5) == 0) {
+        return -1;
+    }
+
+    if(musig_sign(ctx, &sig2, &pub, keys[1], pubkeys, 2, "hello", 5) == 0) {
+        return -1;
+    }
+
+    schnorr_sig* sigs[2];
+    sigs[0] = sig1;
+    sigs[1] = sig2;
+
+    schnorr_sig* sigAgg;
+    if(musig_aggregate(ctx, &sigAgg, sigs, 2) == 0) {
+        return -1;
+    }
+
+    if(musig_verify(ctx, sigAgg, pub, "hello", 5) != 1) {
         return -1;
     }
 
