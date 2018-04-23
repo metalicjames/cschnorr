@@ -6,7 +6,7 @@
 #include "key.h"
 
 typedef struct {
-    unsigned char r[32];
+    unsigned char r[33];
     BIGNUM* s;
 } schnorr_sig;
 

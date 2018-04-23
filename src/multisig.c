@@ -206,54 +206,15 @@ int aggregate_R(const schnorr_context* ctx,
 int point_to_buf(const schnorr_context* ctx,
           unsigned char* r,
           const EC_POINT* R) {
-    BIGNUM* Rx = NULL;
-    BIGNUM* Ry = NULL;
-    EC_POINT* Rcopy = NULL;
     int error = 0;
 
-    Rcopy = EC_POINT_new(ctx->group);
-    if(Rcopy == NULL) {
-        goto cleanup;
-    }
-
-    if(EC_POINT_copy(Rcopy, R) == 0) {
-        goto cleanup;
-    }
-
-    Rx = BN_new();
-    if(Rx == NULL) {
-        goto cleanup;
-    }
-    
-    Ry = BN_new();
-    if(Ry == NULL) {
-        goto cleanup;
-    }
-
-    if(EC_POINT_get_affine_coordinates_GFp(ctx->group, Rcopy, Rx, Ry, ctx->bn_ctx) == 0) {
-        goto cleanup;
-    }
-
-    if(BN_is_odd(Ry)) {
-        if(EC_POINT_invert(ctx->group, Rcopy, ctx->bn_ctx) == 0) {
-            goto cleanup;
-        }
-
-        if(EC_POINT_get_affine_coordinates_GFp(ctx->group, Rcopy, Rx, Ry, ctx->bn_ctx) == 0) {
-            goto cleanup;
-        }
-    }
-
-    if(BN_bn2bin(Rx, r) <= 0) {
+    if(EC_POINT_point2oct(ctx->group, R, POINT_CONVERSION_COMPRESSED, r, 33, ctx->bn_ctx) < 33) {
         goto cleanup;
     }
 
     error = 1;
 
     cleanup:
-    BN_free(Rx);
-    BN_free(Ry);
-    EC_POINT_free(Rcopy);
 
     return error;
 }
@@ -333,7 +294,7 @@ int musig_sign(const schnorr_context* ctx,
     if(EC_POINT_point2oct(ctx->group, 
                           key->pub->A, 
                           POINT_CONVERSION_COMPRESSED, 
-                          (unsigned char*)&h1_buf + 32, 
+                          (unsigned char*)&h2_buf + 32, 
                           33, 
                           ctx->bn_ctx) != 33) {
         goto cleanup;
@@ -440,18 +401,8 @@ int musig_verify(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    committed_r_pubkey tempPub;
-    memcpy(tempPub.r, sig->r, 32);
-
-    const int retval = recover_R(ctx, &tempPub, R);
-    switch(retval) {
-        case 0:
-            goto cleanup;
-        case 1:
-            break;
-        default:
-            error = -1;
-            goto cleanup;
+    if(EC_POINT_oct2point(ctx->group, R, sig->r, 33, ctx->bn_ctx) == 0) {
+        goto cleanup;
     }
 
     unsigned char h1_buf[33 + 33 + 32];
@@ -507,10 +458,10 @@ int musig_verify(const schnorr_context* ctx,
     const int res = EC_POINT_cmp(ctx->group, HX, sG, ctx->bn_ctx);
     switch(res) {
         case 0:
+            break;
+        case 1:
             error = -1;
             goto cleanup;
-        case 1:
-            break;
         default:
             goto cleanup;
     }
@@ -550,6 +501,8 @@ int musig_aggregate(const schnorr_context* ctx,
             goto cleanup;
         }
     }
+
+    memcpy((*sig)->r, (*sigs)->r, 33);
 
     error = 1;
 
