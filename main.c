@@ -1,7 +1,7 @@
 #include "src/signature.h"
 #include "src/multisig.h"
 
-int main() {
+int run() {
     schnorr_context* ctx = schnorr_context_new();
     if(ctx == NULL) {
         return -1;
@@ -78,35 +78,57 @@ int main() {
     schnorr_sig* sig1;
     schnorr_sig* sig2;
     schnorr_pubkey* pub;
-    if(musig_sign(ctx, &sig1, &pub, keys[0], pubkeys, 2, "hello", 5) == 0) {
+    if(musig_sign(ctx, &sig1, &pub, keys[0], pubkeys, 1, "hello", 5) == 0) {
         return -1;
     }
 
-    if(musig_sign(ctx, &sig2, &pub, keys[1], pubkeys, 2, "hello", 5) == 0) {
+    /*if(musig_sign(ctx, &sig2, &pub, keys[1], pubkeys, 2, "hello", 5) == 0) {
         return -1;
-    }
+    }*/
 
     schnorr_sig* sigs[2];
     sigs[0] = sig1;
     sigs[1] = sig2;
 
-    schnorr_sig* sigAgg;
+    /*schnorr_sig* sigAgg;
     if(musig_aggregate(ctx, &sigAgg, sigs, 2) == 0) {
         return -1;
-    }
+    }*/
 
-    if(musig_verify(ctx, sigAgg, pub, "hello", 5) != 1) {
+    if(musig_verify(ctx, sig1, pub, "hello", 5) != 1) {
         return -1;
     }
 
     committed_r_key_free(rkey);
+    committed_r_key_free(rkey2);
     committed_r_key_free(recovered);
     committed_r_sig_free(rsig);
     committed_r_sig_free(rsig2);
     schnorr_sig_free(sig);
     schnorr_key_free(key);
     schnorr_sig_free(forgery);
+    schnorr_sig_free(sig1);
+    //schnorr_sig_free(sig2);
+    //schnorr_sig_free(sigAgg);
+    EC_POINT_free(pub->A);
+    free(pub);
     schnorr_context_free(ctx);
 
+    return 0;
+}
+
+int main() {
+    int fails = 0;
+    int tot = 0;
+    while(fails < 100) {
+        switch(run()) {
+            case -1:
+                fails++;
+            default:
+                tot++;
+                printf("%d / %d (%f%%)\n", fails, tot, ((float)fails / (float)tot)*100);
+        }
+    }
+    
     return 0;
 }
