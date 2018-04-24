@@ -136,7 +136,7 @@ int schnorr_sign(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    if(BN_mul(s, BNh, key->a, ctx->bn_ctx) == 0) {
+    if(BN_mod_mul(s, BNh, key->a, ctx->order, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
@@ -319,7 +319,7 @@ int committed_r_sign(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    if(BN_mul((*dest)->s, BNh, key->a, ctx->bn_ctx) == 0) {
+    if(BN_mod_mul((*dest)->s, BNh, key->a, ctx->order, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
@@ -458,11 +458,11 @@ int committed_r_recover(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    if(BN_mul((*dest)->k, h2, (*dest)->a, ctx->bn_ctx) == 0) {
+    if(BN_mod_mul((*dest)->k, h2, (*dest)->a, ctx->order, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
-    if(BN_add((*dest)->k, sig2->s, (*dest)->k) == 0) {
+    if(BN_mod_add((*dest)->k, sig2->s, (*dest)->k, ctx->order, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 

@@ -2,8 +2,70 @@
 
 #include <string.h>
 
+musig_key* musig_key_new(const schnorr_context* ctx) {
+    musig_key* ret = NULL;
+    schnorr_key* key = NULL;
+    int error = 1;
+
+    key = schnorr_key_new(ctx);
+    if(key == NULL) {
+        goto cleanup;
+    }
+
+    ret = malloc(sizeof(musig_key));
+    if(ret == NULL) {
+        goto cleanup;
+    }
+    ret->pub = NULL;
+
+    ret->a = key->a;
+
+    ret->pub = malloc(sizeof(musig_pubkey));
+    if(ret == NULL) {
+        goto cleanup;
+    }
+    ret->pub->A = NULL;
+    ret->pub->R = NULL;
+
+    ret->k = BN_new();
+    if(ret->k == NULL) {
+        goto cleanup;
+    }
+
+    if(BN_rand(ret->k, 256, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY) != 1) {
+        goto cleanup;
+    }
+
+    ret->pub->R = EC_POINT_new(ctx->group);
+    if(ret->pub->R == NULL) {
+        goto cleanup;
+    }
+
+    if(EC_POINT_mul(ctx->group, ret->pub->R, NULL, ctx->G, ret->k, ctx->bn_ctx) == 0) {
+        goto cleanup;
+    }
+
+    ret->pub->A = key->pub->A;
+
+    error = 0;
+
+    cleanup:
+    if(error) {
+        schnorr_key_free(key);
+        EC_POINT_free(ret->pub->R);
+        free(ret->pub);
+        free(ret);
+        return NULL;
+    } else {
+        free(key->pub);
+        free(key);
+    }
+
+    return ret;
+}
+
 int gen_L(const schnorr_context* ctx,
-           committed_r_pubkey** pubkeys,
+           musig_pubkey** pubkeys,
            const size_t n,
            unsigned char* L) {
     int error = 1;
@@ -14,7 +76,7 @@ int gen_L(const schnorr_context* ctx,
     }
 
     int i = 0;
-    for(committed_r_pubkey** key = pubkeys; 
+    for(musig_pubkey** key = pubkeys; 
         key < pubkeys + n; 
         key++) {
         if(EC_POINT_point2oct(ctx->group, 
@@ -45,7 +107,7 @@ int gen_L(const schnorr_context* ctx,
 }
 
 int gen_X(const schnorr_context* ctx,
-          committed_r_pubkey** pubkeys,
+          musig_pubkey** pubkeys,
           const size_t n,
           const unsigned char* L,
           EC_POINT* X) {
@@ -61,7 +123,7 @@ int gen_X(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    for(committed_r_pubkey** key = pubkeys; 
+    for(musig_pubkey** key = pubkeys; 
         key < pubkeys + n; 
         key++) {
         unsigned char payload[65];
@@ -106,101 +168,20 @@ int gen_X(const schnorr_context* ctx,
     return 1;
 }
 
-int recover_R(const schnorr_context* ctx,
-              const committed_r_pubkey* pubkey,
-              EC_POINT* R) {
-    int error = 0;
-    BIGNUM* Rx = NULL;
-    BIGNUM* Ry = NULL;
-    BIGNUM* BNr = BN_new();
-    if(BNr == NULL) {
-        goto cleanup;
-    }
-    
-    if(BN_bin2bn(pubkey->r, 32, BNr) == NULL) {
-        goto cleanup;
-    }
-
-    if(EC_POINT_set_compressed_coordinates_GFp(ctx->group, R, BNr, 0, ctx->bn_ctx) == 0) {
-        goto cleanup;
-    }
-
-    const int onCurve = EC_POINT_is_on_curve(ctx->group, R, ctx->bn_ctx);
-    switch(onCurve) {
-        case 1:
-            break;
-        case 0:
-            error = -1;
-        default:
-            goto cleanup;
-    }
-    
-    if(EC_POINT_is_at_infinity(ctx->group, R) == 1) {
-        error = -1;
-        goto cleanup;
-    }
-
-    Rx = BN_new();
-    if(Rx == NULL) {
-        goto cleanup;
-    }
-    
-    Ry = BN_new();
-    if(Ry == NULL) {
-        goto cleanup;
-    }
-
-    if(EC_POINT_get_affine_coordinates_GFp(ctx->group, R, Rx, Ry, ctx->bn_ctx) == 0) {
-        goto cleanup;
-    }
-
-    if(BN_is_odd(Ry)) {
-        if(EC_POINT_invert(ctx->group, R, ctx->bn_ctx) == 0) {
-            goto cleanup;
-        }
-    }
-
-    error = 1;
-
-    cleanup:
-    BN_free(BNr);
-    BN_free(Rx);
-    BN_free(Ry);
-
-    return error;
- }
-
 int aggregate_R(const schnorr_context* ctx,
-          committed_r_pubkey** pubkeys,
-          const size_t n,
-          EC_POINT* R) {
-    int error = 0;
-    EC_POINT* cR = EC_POINT_new(ctx->group);
-    if(cR == NULL) {
-        return 0;
-    }
-
-    for(committed_r_pubkey** key = pubkeys; 
+                musig_pubkey** pubkeys,
+                const size_t n,
+                EC_POINT* R) {
+    for(musig_pubkey** key = pubkeys; 
         key < pubkeys + n; 
         key++) {
 
-        const int ret = recover_R(ctx, *key, cR);
-        if(ret != 1) {
-            error = ret;
-            goto cleanup;
-        }
-        
-        if(EC_POINT_add(ctx->group, R, cR, R, ctx->bn_ctx) == 0) {
-            goto cleanup;
+        if(EC_POINT_add(ctx->group, R, (*key)->R, R, ctx->bn_ctx) == 0) {
+            return 0;
         }
     }
 
-    error = 1;
-
-    cleanup:
-    EC_POINT_free(cR);
-
-    return error;
+    return 1;
 }
 
 int point_to_buf(const schnorr_context* ctx,
@@ -220,10 +201,10 @@ int point_to_buf(const schnorr_context* ctx,
 }
 
 int musig_sign(const schnorr_context* ctx,
-               schnorr_sig** dest, 
-               schnorr_pubkey** pub,
-               const committed_r_key* key,
-               committed_r_pubkey** pubkeys,
+               musig_sig** dest, 
+               musig_pubkey** pub,
+               const musig_key* key,
+               musig_pubkey** pubkeys,
                const size_t n,
                const unsigned char* msg, 
                const size_t len) {
@@ -323,15 +304,15 @@ int musig_sign(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    if(BN_mul(tmp, tmp2, tmp, ctx->bn_ctx) == 0) {
+    if(BN_mod_mul(tmp, tmp2, tmp, ctx->order, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
-    if(BN_mul(tmp, tmp, key->a, ctx->bn_ctx) == 0) {
+    if(BN_mod_mul(tmp, tmp, key->a, ctx->order, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
-    *dest = malloc(sizeof(schnorr_sig));
+    *dest = malloc(sizeof(musig_sig));
     if(*dest == NULL) {
         goto cleanup;
     }
@@ -341,15 +322,13 @@ int musig_sign(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    if(BN_add((*dest)->s, tmp, key->k) == 0) {
+    if(BN_mod_add((*dest)->s, tmp, key->k, ctx->order, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
-    if(point_to_buf(ctx, (*dest)->r, R) == 0) {
-        goto cleanup;
-    }
+    (*dest)->R = R;
 
-    *pub = malloc(sizeof(schnorr_pubkey));
+    *pub = malloc(sizeof(musig_pubkey));
     if(*pub == NULL) {
         goto cleanup;
     }
@@ -360,8 +339,8 @@ int musig_sign(const schnorr_context* ctx,
     cleanup:
     BN_free(tmp);
     BN_free(tmp2);
-    EC_POINT_free(R);
     if(error != 1) {
+        EC_POINT_free(R);
         EC_POINT_free(X);
         if(*dest != NULL) {
             BN_free((*dest)->s);
@@ -377,12 +356,11 @@ int musig_sign(const schnorr_context* ctx,
 }
 
 int musig_verify(const schnorr_context* ctx,
-                 const schnorr_sig* sig,
-                 const schnorr_pubkey* pubkey,
+                 const musig_sig* sig,
+                 const musig_pubkey* pubkey,
                  const unsigned char* msg,
                  const size_t len) {
     EC_POINT* sG = NULL;
-    EC_POINT* R = NULL;
     EC_POINT* HX = NULL;
     BIGNUM* tmp = NULL;
     int error = 0;
@@ -393,15 +371,6 @@ int musig_verify(const schnorr_context* ctx,
     }
 
     if(EC_POINT_mul(ctx->group, sG, NULL, ctx->G, sig->s, ctx->bn_ctx) == 0) {
-        goto cleanup;
-    }
-
-    R = EC_POINT_new(ctx->group);
-    if(R == NULL) {
-        goto cleanup;
-    }
-
-    if(EC_POINT_oct2point(ctx->group, R, sig->r, 33, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
@@ -420,7 +389,7 @@ int musig_verify(const schnorr_context* ctx,
     }
 
     if(EC_POINT_point2oct(ctx->group, 
-                          R, 
+                          sig->R, 
                           POINT_CONVERSION_COMPRESSED, 
                           (unsigned char*)&h1_buf + 33, 
                           33,
@@ -451,7 +420,7 @@ int musig_verify(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    if(EC_POINT_add(ctx->group, HX, HX, R, ctx->bn_ctx) == 0) {
+    if(EC_POINT_add(ctx->group, HX, HX, sig->R, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
@@ -470,7 +439,6 @@ int musig_verify(const schnorr_context* ctx,
 
     cleanup:
     EC_POINT_free(sG);
-    EC_POINT_free(R);
     EC_POINT_free(HX);
     BN_free(tmp);
 
@@ -478,37 +446,46 @@ int musig_verify(const schnorr_context* ctx,
 }
 
 int musig_aggregate(const schnorr_context* ctx,
-                    schnorr_sig** sig,
-                    schnorr_sig** sigs,
+                    musig_sig** sig,
+                    musig_sig** sigs,
                     const size_t n) {
     int error = 0;
     *sig = NULL;
-    *sig = malloc(sizeof(schnorr_sig));
+    *sig = malloc(sizeof(musig_sig));
     if(*sig == NULL) {
         goto cleanup;
     }
     (*sig)->s = NULL;
+    (*sig)->R = NULL;
 
     (*sig)->s = BN_new();
     if((*sig)->s == NULL) {
         goto cleanup;
     }
     
-    for(schnorr_sig** cur = sigs; 
+    for(musig_sig** cur = sigs; 
         cur < sigs + n; 
         cur++) {
-        if(BN_add((*sig)->s, (*sig)->s, (*cur)->s) == 0) {
+        if(BN_mod_add((*sig)->s, (*sig)->s, (*cur)->s, ctx->order, ctx->bn_ctx) == 0) {
             goto cleanup;
         }
     }
 
-    memcpy((*sig)->r, (*sigs)->r, 33);
+    (*sig)->R = EC_POINT_new(ctx->group);
+    if((*sig)->R == NULL) {
+        goto cleanup;
+    }
+
+    if(EC_POINT_copy((*sig)->R, (*sigs)->R) == 0) {
+        goto cleanup;
+    }
 
     error = 1;
 
     cleanup:
     if(error != 1) {
         if(*sig != NULL) {
+            EC_POINT_free((*sig)->R);
             BN_free((*sig)->s);
             free(*sig);
         }
