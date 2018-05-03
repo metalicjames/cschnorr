@@ -1,6 +1,10 @@
 #ifndef MULTISIG_H_INCLUDED
 #define MULTISIG_H_INCLUDED
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "key.h"
 #include "signature.h"
 
@@ -41,5 +45,9 @@ int musig_verify(const schnorr_context* ctx,
                  const musig_pubkey* pubkey,
                  const unsigned char* msg,
                  const size_t len);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

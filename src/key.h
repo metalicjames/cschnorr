@@ -1,6 +1,10 @@
 #ifndef KEY_H_INCLUDED
 #define KEY_H_INCLUDED
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "context.h"
 
 #include <openssl/ec.h>
@@ -30,5 +34,9 @@ typedef struct {
 
 committed_r_key* committed_r_key_new(const schnorr_context* ctx);
 void committed_r_key_free(committed_r_key* key);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -1,6 +1,10 @@
 #ifndef SIGNATURE_H_INCLUDED
 #define SIGNATURE_H_INCLUDED
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <openssl/ec.h>
 
 #include "key.h"
@@ -61,5 +65,9 @@ int committed_r_recover(const schnorr_context* ctx,
                         committed_r_key** dest);
 
 int hash(unsigned char* out, const unsigned char* in, const size_t len);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
