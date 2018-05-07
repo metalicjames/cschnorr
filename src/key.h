@@ -23,7 +23,7 @@ void schnorr_key_free(schnorr_key* key);
 
 typedef struct {
     EC_POINT* A;
-    unsigned char r[32];
+    EC_POINT* R;
 } committed_r_pubkey;
 
 typedef struct {

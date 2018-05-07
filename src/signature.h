@@ -10,7 +10,7 @@ extern "C" {
 #include "key.h"
 
 typedef struct {
-    unsigned char r[33];
+    EC_POINT* R;
     BIGNUM* s;
 } schnorr_sig;
 
@@ -33,11 +33,10 @@ typedef struct {
     BIGNUM* s;
 } committed_r_sig;
 
-int gen_r(const schnorr_context* ctx, unsigned char* r, BIGNUM* k);
 int gen_h(const schnorr_context* ctx,
           const unsigned char* msg, 
           const size_t len, 
-          const unsigned char* r, 
+          const EC_POINT* R, 
           BIGNUM* out);
 
 int committed_r_sign(const schnorr_context* ctx,

@@ -107,7 +107,12 @@ committed_r_key* committed_r_key_new(const schnorr_context* ctx) {
         goto cleanup;
     }
 
-    if(gen_r(ctx, ret->pub->r, k) == 0) {
+    ret->pub->R = EC_POINT_new(ctx->group);
+    if(ret->pub->R == NULL) {
+        goto cleanup;
+    }
+
+    if(EC_POINT_mul(ctx->group, ret->pub->R, NULL, ctx->G, k, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
