@@ -72,7 +72,7 @@ int schnorr_sign(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    if(BN_mul(s, BNh, key->a, ctx->bn_ctx) == 0) {
+    if(BN_mod_mul(s, BNh, key->a, ctx->order, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
@@ -228,7 +228,7 @@ int committed_r_sign(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    if(BN_mul((*dest)->s, BNh, key->a, ctx->bn_ctx) == 0) {
+    if(BN_mod_mul((*dest)->s, BNh, key->a, ctx->order, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
@@ -336,7 +336,7 @@ int committed_r_recover(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    if(BN_sub((*dest)->a, sig2->s, sig1->s) == 0) {
+    if(BN_mod_sub((*dest)->a, sig2->s, sig1->s, ctx->order, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
@@ -362,15 +362,19 @@ int committed_r_recover(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    if(BN_sub(h1, h1, h2) == 0) {
+    if(BN_mod_sub(h1, h1, h2, ctx->order, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
-    if(BN_div((*dest)->a, NULL, (*dest)->a, h1, ctx->bn_ctx) == 0) {
+    if(BN_mod_inverse(h1, h1, ctx->order, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
-    if(BN_mul((*dest)->k, h2, (*dest)->a, ctx->bn_ctx) == 0) {
+    if(BN_mod_mul((*dest)->a, h1, (*dest)->a, ctx->order, ctx->bn_ctx) == 0) {
+        goto cleanup;
+    }
+
+    if(BN_mod_mul((*dest)->k, h2, (*dest)->a, ctx->order, ctx->bn_ctx) == 0) {
         goto cleanup;
     }
 
