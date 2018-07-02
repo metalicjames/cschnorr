@@ -1,0 +1,5 @@
+bin
+obj
+test.make
+cschnorr.make
+Makefile
