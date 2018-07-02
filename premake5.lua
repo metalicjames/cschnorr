@@ -19,11 +19,11 @@ workspace "cschnorr"
 
     filter {"configurations:Debug"}
         optimize "Off"
-        symbols "Off"
+        symbols "On"
 
     filter {"configurations:Release"}
         optimize "Full"
-        symbols "On"
+        symbols "Off"
 
 project "cschnorr"
     
