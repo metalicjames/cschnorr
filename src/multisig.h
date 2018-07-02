@@ -25,6 +25,9 @@ typedef struct {
 } musig_key;
 
 musig_key* musig_key_new(const schnorr_context* ctx);
+void musig_key_free(musig_key* key);
+void musig_pubkey_free(musig_pubkey* key);
+void musig_sig_free(musig_sig* sig);
 
 int musig_sign(const schnorr_context* ctx,
                musig_sig** dest, 

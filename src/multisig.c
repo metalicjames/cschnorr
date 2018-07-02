@@ -333,6 +333,7 @@ int musig_sign(const schnorr_context* ctx,
         goto cleanup;
     }
     (*pub)->A = X;
+    (*pub)->R = NULL;
 
     error = 1;
 
@@ -492,4 +493,41 @@ int musig_aggregate(const schnorr_context* ctx,
     }
 
     return error;
+}
+
+void musig_key_free(musig_key* key) {
+    if(key->k != NULL) {
+        BN_free(key->k);
+    }
+    if(key->a != NULL) {
+        BN_free(key->a);
+    }
+
+    if(key->pub != NULL) {
+        musig_pubkey_free(key->pub);
+    }
+
+    free(key);
+}
+
+void musig_sig_free(musig_sig* sig) {
+    if(sig->s != NULL) {
+        BN_free(sig->s);
+    }
+    if(sig->R != NULL) {
+        EC_POINT_free(sig->R);
+    }
+
+    free(sig);
+}
+
+void musig_pubkey_free(musig_pubkey* key) {
+    if(key->A != NULL) {
+        EC_POINT_free(key->A);
+    }
+    if(key->R != NULL) {
+        EC_POINT_free(key->R);
+    }
+
+    free(key);
 }

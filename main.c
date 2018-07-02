@@ -105,8 +105,12 @@ int run() {
     schnorr_sig_free(sig);
     schnorr_key_free(key);
     schnorr_sig_free(forgery);
-    EC_POINT_free(pub->A);
-    free(pub);
+    musig_pubkey_free(pub);
+    musig_sig_free(sig1);
+    musig_sig_free(sig2);
+    musig_sig_free(sigAgg);
+    musig_key_free(key1);
+    musig_key_free(key2);
     schnorr_context_free(ctx);
 
     return 0;
