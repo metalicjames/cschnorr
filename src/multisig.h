@@ -43,6 +43,11 @@ int musig_aggregate(const schnorr_context* ctx,
                     musig_sig** sigs,
                     const size_t n);
 
+int musig_pubkey_aggregate(const schnorr_context* ctx,
+                           musig_pubkey** pubkeys,
+                           musig_pubkey** pubkey,
+                           const size_t n);
+
 int musig_verify(const schnorr_context* ctx,
                  const musig_sig* sig,
                  const musig_pubkey* pubkey,

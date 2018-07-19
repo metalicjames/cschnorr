@@ -495,6 +495,48 @@ int musig_aggregate(const schnorr_context* ctx,
     return error;
 }
 
+int musig_pubkey_aggregate(const schnorr_context* ctx,
+                           musig_pubkey** pubkeys,
+                           musig_pubkey** pubkey,
+                           const size_t n) {
+    EC_POINT* X = NULL;
+    *pubkey = NULL;
+    int error = 0;
+    
+    unsigned char L[32];
+    if(gen_L(ctx, pubkeys, n, (unsigned char*)&L) == 0) {
+        goto cleanup;
+    }
+
+    X = EC_POINT_new(ctx->group);
+    if(X == NULL) {
+        goto cleanup;
+    }
+
+    if(gen_X(ctx, pubkeys, n, L, X) == 0) {
+        goto cleanup;
+    }
+
+    *pubkey = malloc(sizeof(musig_pubkey));
+    if(*pubkey == NULL) {
+        goto cleanup;
+    }
+    (*pubkey)->A = X;
+    (*pubkey)->R = NULL;
+
+    error = 1;
+    
+    cleanup:
+    if(error != 1) {
+        if(*pubkey != NULL) {
+            musig_pubkey_free(*pubkey);
+        }
+        EC_POINT_free(X);
+    }
+
+    return error;
+}
+
 void musig_key_free(musig_key* key) {
     if(key->k != NULL) {
         BN_free(key->k);
