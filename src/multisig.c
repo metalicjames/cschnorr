@@ -76,11 +76,11 @@ int gen_L(const schnorr_context* ctx,
     }
 
     int i = 0;
-    for(musig_pubkey** key = pubkeys; 
-        key < pubkeys + n; 
+    for(musig_pubkey** key = pubkeys;
+        key < pubkeys + n;
         key++) {
-        if(EC_POINT_point2oct(ctx->group, 
-                              (*key)->A, 
+        if(EC_POINT_point2oct(ctx->group,
+                              (*key)->A,
                               POINT_CONVERSION_COMPRESSED,
                               payload + (i * 33),
                               33,
@@ -90,7 +90,7 @@ int gen_L(const schnorr_context* ctx,
         i++;
     }
 
-    if(hash((unsigned char*)&L, payload, n * 33 * sizeof(unsigned char)) == 0) {
+    if(hash(L, payload, n * 33 * sizeof(unsigned char)) == 0) {
         goto cleanup;
     }
 
@@ -123,12 +123,12 @@ int gen_X(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    for(musig_pubkey** key = pubkeys; 
-        key < pubkeys + n; 
+    for(musig_pubkey** key = pubkeys;
+        key < pubkeys + n;
         key++) {
         unsigned char payload[65];
-        if(EC_POINT_point2oct(ctx->group, 
-                              (*key)->A, 
+        if(EC_POINT_point2oct(ctx->group,
+                              (*key)->A,
                               POINT_CONVERSION_COMPRESSED,
                               (unsigned char*)&payload + 32,
                               33,
@@ -139,7 +139,7 @@ int gen_X(const schnorr_context* ctx,
         memcpy(payload, L, 32);
 
         unsigned char h[32];
-        if(hash((unsigned char*)&h, payload, 65) == 0) {
+        if(hash(&h[0], payload, 65) == 0) {
             goto cleanup;
         }
 
@@ -164,7 +164,7 @@ int gen_X(const schnorr_context* ctx,
     if(error) {
         return 0;
     }
-    
+
     return 1;
 }
 
@@ -172,8 +172,8 @@ int aggregate_R(const schnorr_context* ctx,
                 musig_pubkey** pubkeys,
                 const size_t n,
                 EC_POINT* R) {
-    for(musig_pubkey** key = pubkeys; 
-        key < pubkeys + n; 
+    for(musig_pubkey** key = pubkeys;
+        key < pubkeys + n;
         key++) {
 
         if(EC_POINT_add(ctx->group, R, (*key)->R, R, ctx->bn_ctx) == 0) {
@@ -201,12 +201,12 @@ int point_to_buf(const schnorr_context* ctx,
 }
 
 int musig_sign(const schnorr_context* ctx,
-               musig_sig** dest, 
+               musig_sig** dest,
                musig_pubkey** pub,
                const musig_key* key,
                musig_pubkey** pubkeys,
                const size_t n,
-               const unsigned char* msg, 
+               const unsigned char* msg,
                const size_t len) {
     EC_POINT* X = NULL;
     EC_POINT* R = NULL;
@@ -229,12 +229,12 @@ int musig_sign(const schnorr_context* ctx,
     if(gen_X(ctx, pubkeys, n, L, X) == 0) {
         goto cleanup;
     }
-    
+
     unsigned char h1_buf[33 + 33 + 32];
-    if(hash((unsigned char*)&h1_buf + 66, msg, len) == 0) {
+    if(hash(&h1_buf[0] + 66, msg, len) == 0) {
         goto cleanup;
     }
-    
+
     if(EC_POINT_point2oct(ctx->group,
                           X,
                           POINT_CONVERSION_COMPRESSED,
@@ -255,34 +255,34 @@ int musig_sign(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    if(EC_POINT_point2oct(ctx->group, 
-                          R, 
-                          POINT_CONVERSION_COMPRESSED, 
-                          (unsigned char*)&h1_buf + 33, 
+    if(EC_POINT_point2oct(ctx->group,
+                          R,
+                          POINT_CONVERSION_COMPRESSED,
+                          (unsigned char*)&h1_buf + 33,
                           33,
                           ctx->bn_ctx) != 33) {
         goto cleanup;
     }
 
     unsigned char h1[32];
-    if(hash((unsigned char*)&h1, (unsigned char*)&h1_buf, 33+33+32) == 0) {
+    if(hash(&h1[0], (unsigned char*)&h1_buf, 33+33+32) == 0) {
         goto cleanup;
     }
 
     unsigned int h2_buf[32 + 33];
     memcpy(&h2_buf, &L, 32);
 
-    if(EC_POINT_point2oct(ctx->group, 
-                          key->pub->A, 
-                          POINT_CONVERSION_COMPRESSED, 
-                          (unsigned char*)&h2_buf + 32, 
-                          33, 
+    if(EC_POINT_point2oct(ctx->group,
+                          key->pub->A,
+                          POINT_CONVERSION_COMPRESSED,
+                          (unsigned char*)&h2_buf + 32,
+                          33,
                           ctx->bn_ctx) != 33) {
         goto cleanup;
     }
 
     unsigned char h2[32];
-    if(hash((unsigned char*)&h2, (unsigned char*)&h2_buf, 33+32) == 0) {
+    if(hash(&h2[0], (unsigned char*)&h2_buf, 33+32) == 0) {
         goto cleanup;
     }
 
@@ -376,10 +376,10 @@ int musig_verify(const schnorr_context* ctx,
     }
 
     unsigned char h1_buf[33 + 33 + 32];
-    if(hash((unsigned char*)&h1_buf + 66, msg, len) == 0) {
+    if(hash(&h1_buf[0] + 66, msg, len) == 0) {
         goto cleanup;
     }
-    
+
     if(EC_POINT_point2oct(ctx->group,
                           pubkey->A,
                           POINT_CONVERSION_COMPRESSED,
@@ -389,17 +389,17 @@ int musig_verify(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    if(EC_POINT_point2oct(ctx->group, 
-                          sig->R, 
-                          POINT_CONVERSION_COMPRESSED, 
-                          (unsigned char*)&h1_buf + 33, 
+    if(EC_POINT_point2oct(ctx->group,
+                          sig->R,
+                          POINT_CONVERSION_COMPRESSED,
+                          (unsigned char*)&h1_buf + 33,
                           33,
                           ctx->bn_ctx) != 33) {
         goto cleanup;
     }
 
     unsigned char h1[32];
-    if(hash((unsigned char*)&h1, (unsigned char*)&h1_buf, 33+33+32) == 0) {
+    if(hash(&h1[0], (unsigned char*)&h1_buf, 33+33+32) == 0) {
         goto cleanup;
     }
 
@@ -463,9 +463,9 @@ int musig_aggregate(const schnorr_context* ctx,
     if((*sig)->s == NULL) {
         goto cleanup;
     }
-    
-    for(musig_sig** cur = sigs; 
-        cur < sigs + n; 
+
+    for(musig_sig** cur = sigs;
+        cur < sigs + n;
         cur++) {
         if(BN_mod_add((*sig)->s, (*sig)->s, (*cur)->s, ctx->order, ctx->bn_ctx) == 0) {
             goto cleanup;
@@ -502,7 +502,7 @@ int musig_pubkey_aggregate(const schnorr_context* ctx,
     EC_POINT* X = NULL;
     *pubkey = NULL;
     int error = 0;
-    
+
     unsigned char L[32];
     if(gen_L(ctx, pubkeys, n, (unsigned char*)&L) == 0) {
         goto cleanup;
@@ -525,7 +525,7 @@ int musig_pubkey_aggregate(const schnorr_context* ctx,
     (*pubkey)->R = NULL;
 
     error = 1;
-    
+
     cleanup:
     if(error != 1) {
         if(*pubkey != NULL) {
