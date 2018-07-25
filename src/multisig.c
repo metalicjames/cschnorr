@@ -130,7 +130,7 @@ int gen_X(const schnorr_context* ctx,
         if(EC_POINT_point2oct(ctx->group,
                               (*key)->A,
                               POINT_CONVERSION_COMPRESSED,
-                              (unsigned char*)&payload + 32,
+                              &payload[32],
                               33,
                               ctx->bn_ctx) == 0) {
             goto cleanup;
@@ -143,7 +143,7 @@ int gen_X(const schnorr_context* ctx,
             goto cleanup;
         }
 
-        if(BN_bin2bn((unsigned char*)&h, 32, BNh) == 0) {
+        if(BN_bin2bn(&h[0], 32, BNh) == 0) {
             goto cleanup;
         }
 
@@ -200,6 +200,106 @@ int point_to_buf(const schnorr_context* ctx,
     return error;
 }
 
+int gen_H1(const schnorr_context* ctx,
+           const EC_POINT* pubkey,
+           const EC_POINT* R,
+           const unsigned char* msg,
+           const size_t len,
+           unsigned char* dest) {
+    unsigned char h1_buf[33 + 33 + 32];
+
+    if(EC_POINT_point2oct(ctx->group,
+                          pubkey,
+                          POINT_CONVERSION_COMPRESSED,
+                          &h1_buf[0],
+                          33,
+                          ctx->bn_ctx) != 33) {
+        return 0;
+    }
+
+    if(EC_POINT_point2oct(ctx->group,
+                          R,
+                          POINT_CONVERSION_COMPRESSED,
+                          &h1_buf[33],
+                          33,
+                          ctx->bn_ctx) != 33) {
+        return 0;
+    }
+
+    if(hash(&h1_buf[66], msg, len) == 0) {
+        return 0;
+    }
+
+    if(hash(dest, &h1_buf[0], 33+33+32) == 0) {
+        return 0;
+    }
+
+    return 1;
+}
+
+int musig_sign_single(const schnorr_context* ctx,
+                      musig_sig** dest,
+                      const musig_key* key,
+                      const unsigned char* msg,
+                      const size_t len) {
+    BIGNUM* tmp = NULL;
+    *dest = NULL;
+    int error = 0;
+
+    unsigned char h1[32];
+    if(gen_H1(ctx, key->pub->A, key->pub->R, msg, len, &h1[0]) != 1) {
+        goto cleanup;
+    }
+
+    tmp = BN_new();
+    if(tmp == NULL) {
+        goto cleanup;
+    }
+
+    if(BN_bin2bn(&h1[0], 32, tmp) == NULL) {
+        goto cleanup;
+    }
+
+    if(BN_mod_mul(tmp, tmp, key->a, ctx->order, ctx->bn_ctx) == 0) {
+        goto cleanup;
+    }
+
+    *dest = malloc(sizeof(musig_sig));
+    if(*dest == NULL) {
+        goto cleanup;
+    }
+    (*dest)->s = NULL;
+    (*dest)->R = NULL;
+
+    (*dest)->s = BN_new();
+    if((*dest)->s == NULL) {
+        goto cleanup;
+    }
+
+    if(BN_mod_add((*dest)->s, tmp, key->k, ctx->order, ctx->bn_ctx) == 0) {
+        goto cleanup;
+    }
+
+    (*dest)->R = EC_POINT_new(ctx->group);
+    if((*dest)->R == NULL) {
+        goto cleanup;
+    }
+
+    if(EC_POINT_copy((*dest)->R, key->pub->R) != 1) {
+        goto cleanup;
+    }
+
+    error = 1;
+
+    cleanup:
+    BN_free(tmp);
+    if(error != 1) {
+        musig_sig_free(*dest);
+    }
+
+    return error;
+}
+
 int musig_sign(const schnorr_context* ctx,
                musig_sig** dest,
                musig_pubkey** pub,
@@ -217,7 +317,7 @@ int musig_sign(const schnorr_context* ctx,
     int error = 0;
 
     unsigned char L[32];
-    if(gen_L(ctx, pubkeys, n, (unsigned char*)&L) == 0) {
+    if(gen_L(ctx, pubkeys, n, &L[0]) == 0) {
         goto cleanup;
     }
 
@@ -227,20 +327,6 @@ int musig_sign(const schnorr_context* ctx,
     }
 
     if(gen_X(ctx, pubkeys, n, L, X) == 0) {
-        goto cleanup;
-    }
-
-    unsigned char h1_buf[33 + 33 + 32];
-    if(hash(&h1_buf[0] + 66, msg, len) == 0) {
-        goto cleanup;
-    }
-
-    if(EC_POINT_point2oct(ctx->group,
-                          X,
-                          POINT_CONVERSION_COMPRESSED,
-                          (unsigned char*)&h1_buf,
-                          33,
-                          ctx->bn_ctx) != 33) {
         goto cleanup;
     }
 
@@ -255,34 +341,25 @@ int musig_sign(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    if(EC_POINT_point2oct(ctx->group,
-                          R,
-                          POINT_CONVERSION_COMPRESSED,
-                          (unsigned char*)&h1_buf + 33,
-                          33,
-                          ctx->bn_ctx) != 33) {
-        goto cleanup;
-    }
-
     unsigned char h1[32];
-    if(hash(&h1[0], (unsigned char*)&h1_buf, 33+33+32) == 0) {
+    if(gen_H1(ctx, X, R, msg, len, &h1[0]) != 1) {
         goto cleanup;
     }
 
-    unsigned int h2_buf[32 + 33];
+    unsigned char h2_buf[32 + 33];
     memcpy(&h2_buf, &L, 32);
 
     if(EC_POINT_point2oct(ctx->group,
                           key->pub->A,
                           POINT_CONVERSION_COMPRESSED,
-                          (unsigned char*)&h2_buf + 32,
+                          &h2_buf[32],
                           33,
                           ctx->bn_ctx) != 33) {
         goto cleanup;
     }
 
     unsigned char h2[32];
-    if(hash(&h2[0], (unsigned char*)&h2_buf, 33+32) == 0) {
+    if(hash(&h2[0], &h2_buf[0], 33+32) == 0) {
         goto cleanup;
     }
 
@@ -291,7 +368,7 @@ int musig_sign(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    if(BN_bin2bn((unsigned char*)&h1, 32, tmp) == NULL) {
+    if(BN_bin2bn(&h1[0], 32, tmp) == NULL) {
         goto cleanup;
     }
 
@@ -300,7 +377,7 @@ int musig_sign(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    if(BN_bin2bn((unsigned char*)&h2, 32, tmp2) == NULL) {
+    if(BN_bin2bn(&h2[0], 32, tmp2) == NULL) {
         goto cleanup;
     }
 
@@ -375,31 +452,8 @@ int musig_verify(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    unsigned char h1_buf[33 + 33 + 32];
-    if(hash(&h1_buf[0] + 66, msg, len) == 0) {
-        goto cleanup;
-    }
-
-    if(EC_POINT_point2oct(ctx->group,
-                          pubkey->A,
-                          POINT_CONVERSION_COMPRESSED,
-                          (unsigned char*)&h1_buf,
-                          33,
-                          ctx->bn_ctx) != 33) {
-        goto cleanup;
-    }
-
-    if(EC_POINT_point2oct(ctx->group,
-                          sig->R,
-                          POINT_CONVERSION_COMPRESSED,
-                          (unsigned char*)&h1_buf + 33,
-                          33,
-                          ctx->bn_ctx) != 33) {
-        goto cleanup;
-    }
-
     unsigned char h1[32];
-    if(hash(&h1[0], (unsigned char*)&h1_buf, 33+33+32) == 0) {
+    if(gen_H1(ctx, pubkey->A, sig->R, msg, len, &h1[0]) != 1) {
         goto cleanup;
     }
 
@@ -408,7 +462,7 @@ int musig_verify(const schnorr_context* ctx,
         goto cleanup;
     }
 
-    if(BN_bin2bn((unsigned char*)&h1, 32, tmp) == NULL) {
+    if(BN_bin2bn(&h1[0], 32, tmp) == NULL) {
         goto cleanup;
     }
 
@@ -504,7 +558,7 @@ int musig_pubkey_aggregate(const schnorr_context* ctx,
     int error = 0;
 
     unsigned char L[32];
-    if(gen_L(ctx, pubkeys, n, (unsigned char*)&L) == 0) {
+    if(gen_L(ctx, pubkeys, n, &L[0]) == 0) {
         goto cleanup;
     }
 

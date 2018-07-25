@@ -44,7 +44,7 @@ int run() {
     if(committed_r_recover(ctx, rsig, "hello", 5, rsig2, "hellO", 5, rkey->pub, &recovered) != 1) {
         return -1;
     }
-    
+
     schnorr_key conv;
     conv.a = recovered->a;
 
@@ -61,6 +61,16 @@ int run() {
     }
 
     musig_key* key1 = musig_key_new(ctx);
+
+    musig_sig* sig_single;
+    if(musig_sign_single(ctx, &sig_single, key1, "hello", 5) != 1) {
+        return -1;
+    }
+
+    if(musig_verify(ctx, sig_single, key1->pub, "hello", 5) != 1) {
+        return -1;
+    }
+
     musig_key* key2 = musig_key_new(ctx);
     musig_key* keys[2];
     keys[0] = key1;
@@ -109,6 +119,7 @@ int run() {
     musig_sig_free(sig1);
     musig_sig_free(sig2);
     musig_sig_free(sigAgg);
+    musig_sig_free(sig_single);
     musig_key_free(key1);
     musig_key_free(key2);
     schnorr_context_free(ctx);
@@ -128,6 +139,6 @@ int main() {
                 printf("%d / %d (%f%%)\n", fails, tot, ((float)fails / (float)tot)*100);
         }
     }
-    
+
     return 0;
 }

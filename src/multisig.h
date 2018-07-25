@@ -30,13 +30,19 @@ void musig_pubkey_free(musig_pubkey* key);
 void musig_sig_free(musig_sig* sig);
 
 int musig_sign(const schnorr_context* ctx,
-               musig_sig** dest, 
+               musig_sig** dest,
                musig_pubkey** pub,
                const musig_key* key,
                musig_pubkey** pubkeys,
                const size_t n,
-               const unsigned char* msg, 
+               const unsigned char* msg,
                const size_t len);
+
+int musig_sign_single(const schnorr_context* ctx,
+                      musig_sig** dest,
+                      const musig_key* key,
+                      const unsigned char* msg,
+                      const size_t len);
 
 int musig_aggregate(const schnorr_context* ctx,
                     musig_sig** sig,
